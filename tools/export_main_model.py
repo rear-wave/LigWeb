@@ -63,6 +63,9 @@ def export_main_model(checkpoint, output, metadata, ligclassify_root):
                 self.model = model
 
             def forward(self, local, global_view, daylight):
+                forward_type = getattr(self.model, "forward_type", None)
+                if forward_type is not None:
+                    return forward_type(local, global_view, daylight)
                 result = self.model(local, global_view, daylight)
                 return result.type_logits, result.features
 
