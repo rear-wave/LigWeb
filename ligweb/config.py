@@ -44,8 +44,6 @@ class LigWebConfig:
     port: int = 8088
     max_cached_files: int = 4
     auto_correction_training: bool = True
-    auto_ic_sync: bool = True
-    ic_sync_poll_seconds: float = 60.0
 
     @classmethod
     def from_env(cls) -> "LigWebConfig":
@@ -106,10 +104,6 @@ class LigWebConfig:
                 True,
                 "LIGEDIT_AUTO_CORRECTION_TRAINING",
             ),
-            auto_ic_sync=_enabled("LIGWEB_AUTO_IC_SYNC", True),
-            ic_sync_poll_seconds=max(
-                5.0, float(_env("LIGWEB_IC_SYNC_POLL_SECONDS", "60"))
-            ),
         )
 
     @property
@@ -137,8 +131,8 @@ class LigWebConfig:
         return self.main_model_dir / "status.json"
 
     @property
-    def ic_sync_status_path(self) -> Path:
-        return self.model_dir / "ic-sync.json"
+    def ic_promotion_status_path(self) -> Path:
+        return self.model_dir / "ic-promotion.json"
 
     def ensure_directories(self) -> None:
         if not self.train_data_dir.is_dir():

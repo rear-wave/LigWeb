@@ -16,7 +16,7 @@ import time
 from typing import Callable
 
 from ligweb.feedback_store import CLASS_NAMES
-from ligweb.ic_sync import ICDataSynchronizer
+from ligweb.ic_sync import ICCorrectionPromoter
 from tools.export_ligclassify_model import _work_around_broken_windows_asyncio
 
 
@@ -208,6 +208,8 @@ def promote_daily_corrections(
     skipped_ineligible: list[str] = []
     failures: list[dict[str, str]] = []
     for label in CLASS_NAMES:
+        if label == "IC":
+            continue
         imports_root = correction_root / label / "imports"
         if not imports_root.is_dir():
             continue
@@ -343,10 +345,22 @@ def run(args) -> dict:
             (
                 "正在检查主模型训练数据"
                 if args.audit_only
-                else "正在将今日确认的纠错数据加入训练集并校验数据"
+                else "正在去重迁移纠错集 IC 并校验主模型训练数据"
             ),
             python_executable=sys.executable,
         )
+        ic_promotion = ICCorrectionPromoter(
+            correction_root,
+            train_root,
+            runtime_dir / "ic-promotion.json",
+        )
+        ic_promotion_summary = (
+            ic_promotion.audit() if args.audit_only else ic_promotion.promote()
+        )
+        if ic_promotion_summary.get("status") == "failed":
+            raise RuntimeError(
+                f"IC 迁移失败: {ic_promotion_summary.get('reason', '')}"
+            )
         promotion_summary = (
             {
                 "date": datetime.now(CHINA_TIMEZONE).date().isoformat(),
@@ -362,13 +376,6 @@ def run(args) -> dict:
             raise RuntimeError(
                 f"有 {len(promotion_summary['failures'])} 个纠错文件无法加入训练集"
             )
-        ic_sync = ICDataSynchronizer(
-            correction_root,
-            train_root,
-            runtime_dir / "ic-sync.json",
-        ).sync(force=True)
-        if ic_sync.get("status") == "failed":
-            raise RuntimeError(f"IC 自动同步失败: {ic_sync.get('reason', '')}")
         data_summary = build_combined_dataset(
             train_root,
             correction_root,
@@ -382,7 +389,7 @@ def run(args) -> dict:
             result = {
                 "data": data_summary,
                 "promotion": promotion_summary,
-                "ic_sync": ic_sync,
+                "ic_promotion": ic_promotion_summary,
                 "python_executable": sys.executable,
                 "export_python": str(export_python),
             }
@@ -396,7 +403,7 @@ def run(args) -> dict:
             "正在使用合并数据重新训练主模型",
             data=data_summary,
             promotion=promotion_summary,
-            ic_sync=ic_sync,
+            ic_promotion=ic_promotion_summary,
             output=str(output),
             python_executable=sys.executable,
             export_python=str(export_python),
@@ -431,7 +438,7 @@ def run(args) -> dict:
             "训练完成，正在校验并激活 ONNX 主模型",
             data=data_summary,
             promotion=promotion_summary,
-            ic_sync=ic_sync,
+            ic_promotion=ic_promotion_summary,
             output=str(output),
             python_executable=sys.executable,
             export_python=str(export_python),
@@ -459,7 +466,7 @@ def run(args) -> dict:
         result = {
             "data": data_summary,
             "promotion": promotion_summary,
-            "ic_sync": ic_sync,
+            "ic_promotion": ic_promotion_summary,
             "output": str(output),
             "best_epoch": metrics.get("best_epoch"),
             "best_score": metrics.get("best_score"),

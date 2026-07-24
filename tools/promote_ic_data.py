@@ -1,4 +1,4 @@
-"""Synchronize approved IC corrections into the managed training subtree."""
+"""Audit or explicitly run the nightly IC correction-data promotion."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ligweb.ic_sync import ICDataSynchronizer
+from ligweb.ic_sync import ICCorrectionPromoter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,18 +20,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--status",
-        default=Path(__file__).resolve().parents[1] / "runtime" / "ic-sync.json",
+        default=Path(__file__).resolve().parents[1] / "runtime" / "ic-promotion.json",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="move data; without this flag the command is read-only",
     )
     return parser
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    result = ICDataSynchronizer(
+    promoter = ICCorrectionPromoter(
         Path(args.correction_data),
         Path(args.train_data),
         Path(args.status),
-    ).sync(force=True)
+    )
+    result = promoter.promote() if args.apply else promoter.audit()
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 1 if result.get("status") == "failed" else 0
 

@@ -12,7 +12,7 @@ echo Building LigWeb container...
 docker build -t ligweb .
 if errorlevel 1 exit /b 1
 docker rm -f ligweb >nul 2>nul
-docker run -d --name ligweb --restart unless-stopped -p %LIGWEB_PORT%:8000 -v "%TRAIN_DATA%:/data/train" -v "%CORRECTION_DATA%:/data/correction" -v "%MODEL_DATA%:/data/runtime" -e LIGWEB_FEEDBACK_DIR=/data/runtime -e LIGWEB_MODEL_DIR=/data/runtime -e LIGWEB_EXPORT_DIR=/data/runtime/exports -e LIGWEB_BASE_MODEL_PATH=/data/runtime/main_model/current.onnx -e LIGWEB_BASE_MODEL_METADATA_PATH=/data/runtime/main_model/current.json -e LIGWEB_CORRECTION_MODEL_DIR=/data/runtime -e LIGWEB_AUTO_CORRECTION_TRAINING=1 -e LIGWEB_AUTO_IC_SYNC=1 ligweb
+docker run -d --name ligweb --restart unless-stopped -p %LIGWEB_PORT%:8000 -v "%TRAIN_DATA%:/data/train" -v "%CORRECTION_DATA%:/data/correction" -v "%MODEL_DATA%:/data/runtime" -e LIGWEB_FEEDBACK_DIR=/data/runtime -e LIGWEB_MODEL_DIR=/data/runtime -e LIGWEB_EXPORT_DIR=/data/runtime/exports -e LIGWEB_BASE_MODEL_PATH=/data/runtime/main_model/current.onnx -e LIGWEB_BASE_MODEL_METADATA_PATH=/data/runtime/main_model/current.json -e LIGWEB_CORRECTION_MODEL_DIR=/data/runtime -e LIGWEB_AUTO_CORRECTION_TRAINING=1 ligweb
 if errorlevel 1 exit /b 1
 call "%~dp0install_training_tasks.bat"
 if errorlevel 1 echo Warning: web service is running, but the 22:00 main-model task was not installed.

@@ -101,50 +101,32 @@ def test_lig_validator_repairs_stale_piece_count_without_changing_mtime(tmp_path
     assert _validate_lig_file(path) is False
 
 
-def test_promote_daily_corrections_moves_all_today_classified_data(tmp_path):
+def test_promote_daily_corrections_moves_non_ic_legacy_imports(tmp_path):
     correction = tmp_path / "correct_data"
     train = tmp_path / "train_data"
     today = date(2026, 7, 21)
     today_timestamp = datetime(
         2026, 7, 21, 15, 30, tzinfo=CHINA_TIMEZONE
     ).timestamp()
-    yesterday_timestamp = datetime(
-        2026, 7, 20, 15, 30, tzinfo=CHINA_TIMEZONE
-    ).timestamp()
-
-    ic_today = correction / "IC" / "imports" / "source" / "today.lig"
-    ic_old = correction / "IC" / "imports" / "source" / "old.lig"
     unknown_distance = (
         correction / "PCG" / "imports" / "unknown-distance" / "today.lig"
     )
     eligible_distance = (
         correction / "PCG" / "imports" / "100-200km" / "today.lig"
     )
-    for path in (ic_today, ic_old, unknown_distance, eligible_distance):
+    for path in (unknown_distance, eligible_distance):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(path.name.encode())
-    os.utime(ic_today, (today_timestamp, today_timestamp))
-    os.utime(ic_old, (yesterday_timestamp, yesterday_timestamp))
     os.utime(unknown_distance, (today_timestamp, today_timestamp))
     os.utime(eligible_distance, (today_timestamp, today_timestamp))
 
     summary = promote_daily_corrections(correction, train, today)
 
-    assert summary["moved"] == 3
+    assert summary["moved"] == 2
     assert summary["failures"] == []
     assert summary["skipped_ineligible"] == []
-    assert not ic_today.exists()
-    assert ic_old.exists()
     assert not unknown_distance.exists()
     assert not eligible_distance.exists()
-    assert (
-        train
-        / "IC"
-        / "daily-corrections"
-        / "2026-07-21"
-        / "source"
-        / "today.lig"
-    ).is_file()
     assert (
         train
         / "PCG"

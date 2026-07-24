@@ -69,7 +69,6 @@ def run(apply: bool) -> dict:
     config = replace(
         LigWebConfig.from_env(),
         auto_correction_training=False,
-        auto_ic_sync=False,
     )
     service = LigWebService(config)
     labels_by_digest, resolution = collect_resolved_labels(service)

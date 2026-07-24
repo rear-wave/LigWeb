@@ -31,7 +31,7 @@ from ligweb.correction_dataset import (
 )
 from ligweb.feedback_store import CLASS_NAMES, FeedbackStore, waveform_digest
 from ligweb.feedback_training import run_feedback_training
-from ligweb.ic_sync import ICDataSynchronizer
+from ligweb.ic_sync import ICCorrectionPromoter
 from ligweb.lig_io import save_lig_file
 from ligweb.lig_parser import (
     ButterFilter,
@@ -43,7 +43,6 @@ from ligweb.config import LigWebConfig
 from ligweb.scheduler import (
     CHINA_TIMEZONE,
     CorrectionTrainingScheduler,
-    PeriodicTaskScheduler,
     next_daily_22,
     next_hour,
 )
@@ -148,38 +147,20 @@ class LigWebService:
             ),
             enabled=self.config.auto_correction_training,
         )
-        self._ic_synchronizer = ICDataSynchronizer(
+        self._ic_promoter = ICCorrectionPromoter(
             self.config.correction_data_dir,
             self.config.train_data_dir,
-            self.config.ic_sync_status_path,
-        )
-        self._ic_sync_scheduler = PeriodicTaskScheduler(
-            self.sync_ic_data,
-            enabled=self.config.auto_ic_sync,
-            poll_seconds=self.config.ic_sync_poll_seconds,
-            thread_name="ligweb-ic-sync",
+            self.config.ic_promotion_status_path,
         )
 
     def start_scheduler(self) -> None:
         self._correction_scheduler.start()
-        self._ic_sync_scheduler.start()
 
     def stop_scheduler(self) -> None:
         self._correction_scheduler.stop()
-        self._ic_sync_scheduler.stop()
 
-    def sync_ic_data(self, force: bool = False) -> dict:
-        """Synchronize approved IC corrections into the managed train subtree."""
-        if not self.config.auto_ic_sync and not force:
-            return {
-                **self._ic_synchronizer.status(),
-                "status": "disabled",
-                "reason": "IC 自动同步已关闭",
-            }
-        return self._ic_synchronizer.sync(force=force)
-
-    def ic_sync_status(self) -> dict:
-        return self._ic_synchronizer.status()
+    def ic_promotion_status(self) -> dict:
+        return self._ic_promoter.status()
 
     def _resolve_dataset_file(self, dataset: str, relative_path: str) -> Path:
         root = self.config.dataset_root(dataset).resolve()
@@ -686,10 +667,8 @@ class LigWebService:
             "correction_enabled": self.config.auto_correction_training,
             "correction_schedule": "每逢整点",
             "next_correction_training": next_hour(now).isoformat(),
-            "ic_sync_enabled": self.config.auto_ic_sync,
-            "ic_sync_schedule": (
-                f"每 {int(self.config.ic_sync_poll_seconds)} 秒检查"
-            ),
+            "ic_promotion_enabled": True,
+            "ic_promotion_schedule": "每天 22:00，主模型训练前",
             "main_schedule": "每天 22:00",
             "next_main_training": next_daily_22(now).isoformat(),
         }
@@ -700,7 +679,7 @@ class LigWebService:
             **correction,
             "correction": correction,
             "main": self.main_training_status(),
-            "ic_sync": self._ic_synchronizer.status(),
+            "ic_promotion": self._ic_promoter.status(),
             "automation": self.automation_status(),
         }
 
@@ -813,10 +792,6 @@ class LigWebService:
                     "main_training_eligible": True,
                 })
 
-        ic_sync = None
-        if self.config.auto_ic_sync and (imported or reclassified_piece_count):
-            ic_sync = self.sync_ic_data(force=True)
-
         source_removed = False
         if dataset == "inbox":
             source_path = document.path.resolve()
@@ -836,7 +811,7 @@ class LigWebService:
             "duplicate_skipped_indices": duplicate_skipped_indices,
             "skipped_indices": duplicate_skipped_indices,
             "reclassified_piece_count": reclassified_piece_count,
-            "ic_sync": ic_sync,
+            "ic_promotion": None,
             "source_removed": source_removed,
         }
 

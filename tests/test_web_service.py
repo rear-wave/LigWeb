@@ -24,7 +24,6 @@ def _config(tmp_path):
         model_dir=tmp_path / "runtime",
         exports_dir=tmp_path / "runtime" / "exports",
         max_cached_files=2,
-        auto_ic_sync=False,
     )
 
 
@@ -479,7 +478,7 @@ def test_fastapi_factory_registers_api_and_static_routes(tmp_path):
     assert "/api/health" in paths
     assert "/api/feedback" in paths
     assert "/api/training" in paths
-    assert "/api/ic-sync" in paths
+    assert "/api/ic-promotion" in paths
     assert "/api/correction-imports" in paths
     assert "/api/export/daynight" in paths
     assert "/api/files/{dataset}/{file_path:path}/save" in paths

@@ -1011,17 +1011,17 @@ function updateTrainingStatus(training) {
   const labels = { activated: "模型已激活", pending: "有待训练纠错", queued: "训练已排队", retained: "保留现有模型", failed: "训练失败", no_changes: "模型已是最新", idle: "尚未训练" };
   const correction = training.correction || training;
   const main = training.main || {};
-  const icSync = training.ic_sync || {};
-  const icLabels = {
-    synced: "已同步",
-    waiting: "等待同步",
-    failed: "同步失败",
-    disabled: "已关闭",
+  const icPromotion = training.ic_promotion || {};
+  const icPromotionLabels = {
+    promoted: "已迁移",
+    audited: "已检查",
+    waiting: "等待 22:00",
+    failed: "迁移失败",
   };
-  $("icSyncStatus").textContent = icSync.running
-    ? "IC 同步：进行中…"
-    : `IC 同步：${icLabels[icSync.status] || icSync.status || "等待同步"}${Number.isInteger(icSync.synced_pieces) ? ` · ${icSync.synced_pieces} 条` : ""}`;
-  $("icSyncStatus").title = icSync.reason || "纠错集 IC 自动同步到训练集";
+  $("icSyncStatus").textContent = icPromotion.running
+    ? "IC 迁移：进行中…"
+    : `IC 迁移：${icPromotionLabels[icPromotion.status] || icPromotion.status || "等待 22:00"}${Number.isInteger(icPromotion.moved_pieces) ? ` · ${icPromotion.moved_pieces} 条` : ""}`;
+  $("icSyncStatus").title = icPromotion.reason || "每天 22:00 主模型训练前，将纠错集 IC 去重迁移到训练集";
   $("trainingStatus").textContent = correction.running ? "纠错模型：训练中…" : `纠错模型：${labels[correction.status] || correction.status} · ${correction.record_count} 条 · G${correction.generation}`;
   const mainLabels = { activated: "已激活", preparing: "准备数据", training: "训练中", exporting: "导出中", failed: "失败", waiting: "等待 22:00" };
   $("mainTrainingStatus").textContent = `主模型：${mainLabels[main.status] || main.status || "等待 22:00"}`;
