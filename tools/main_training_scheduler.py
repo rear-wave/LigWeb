@@ -53,9 +53,9 @@ def _single_instance_mutex():
 
 
 def run_scheduler(args) -> int:
-    feedback_dir = Path(args.feedback_dir).resolve()
-    schedule_path = feedback_dir / "main_model" / "schedule.json"
-    training_log = feedback_dir / "main_model" / "scheduled-training.log"
+    runtime_dir = Path(args.runtime_dir).resolve()
+    schedule_path = runtime_dir / "main_model" / "schedule.json"
+    training_log = runtime_dir / "main_model" / "scheduled-training.log"
     repository_root = Path(args.repository_root).resolve()
     completed_slot = None
     if schedule_path.is_file():
@@ -123,10 +123,15 @@ def run_scheduler(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     repository = Path(__file__).resolve().parents[1]
-    feedback = Path.home() / "Desktop" / "correct_data" / ".ligedit"
+    runtime = Path(__file__).resolve().parents[1] / "runtime"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository-root", default=repository)
-    parser.add_argument("--feedback-dir", default=feedback)
+    parser.add_argument(
+        "--runtime-dir",
+        "--feedback-dir",
+        dest="runtime_dir",
+        default=runtime,
+    )
     parser.add_argument("--poll-seconds", type=float, default=30.0)
     parser.add_argument("--once", action="store_true")
     return parser

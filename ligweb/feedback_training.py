@@ -86,8 +86,15 @@ def _write_status(store, status, reason):
     store.set_state("last_training_time", _timestamp())
 
 
-def run_feedback_training(feedback_dir=None) -> TrainingOutcome:
+def run_feedback_training(
+    feedback_dir=None, correction_model_dir=None
+) -> TrainingOutcome:
     root = Path(feedback_dir) if feedback_dir else default_feedback_dir()
+    model_root = (
+        Path(correction_model_dir)
+        if correction_model_dir is not None
+        else Path(os.environ.get("LIGWEB_CORRECTION_MODEL_DIR", root))
+    )
     store = FeedbackStore(root / "feedback.sqlite3")
     generation = int(store.get_state("active_generation") or 0)
     if not store.is_dirty():
@@ -95,7 +102,7 @@ def run_feedback_training(feedback_dir=None) -> TrainingOutcome:
         current_hash = get_base_model_hash()
         compatible = (
             enabled_count == 0
-            or load_active_index(root, current_hash) is not None
+            or load_active_index(model_root, current_hash) is not None
         )
         if compatible:
             reason = "没有新增或修改的纠错记录"
@@ -114,8 +121,8 @@ def run_feedback_training(feedback_dir=None) -> TrainingOutcome:
             model_hash = get_base_model_hash()
             if not model_hash:
                 raise RuntimeError("base model is unavailable")
-            next_generation = _next_generation(root, store)
-            active = load_active_index(root, model_hash)
+            next_generation = _next_generation(model_root, store)
+            active = load_active_index(model_root, model_hash)
 
             if records:
                 predictions = classify_batch_detailed(
@@ -142,8 +149,8 @@ def run_feedback_training(feedback_dir=None) -> TrainingOutcome:
                 )
 
             if acceptable:
-                directory = save_generation(root, candidate)
-                activate_generation(root, directory)
+                directory = save_generation(model_root, candidate)
+                activate_generation(model_root, directory)
                 generation = candidate.generation
                 status = "activated"
                 reason = (

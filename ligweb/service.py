@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 import os
@@ -135,6 +135,10 @@ class LigWebService:
         os.environ.setdefault(
             "LIGWEB_BASE_MODEL_METADATA_PATH",
             str(self.config.main_model_metadata_path),
+        )
+        os.environ.setdefault(
+            "LIGWEB_CORRECTION_MODEL_DIR",
+            str(self.config.correction_model_dir),
         )
         self._correction_scheduler = CorrectionTrainingScheduler(
             self.start_training,
@@ -369,7 +373,7 @@ class LigWebService:
 
     def _get_correction_context(self):
         database = self.config.feedback_dir / "feedback.sqlite3"
-        active = self.config.feedback_dir / "active.json"
+        active = self.config.correction_model_dir / "active.json"
         signature = (
             database.stat().st_mtime_ns if database.exists() else None,
             active.stat().st_mtime_ns if active.exists() else None,
@@ -381,7 +385,8 @@ class LigWebService:
                 or signature != self._correction_signature
             ):
                 self._correction_context = load_correction_context(
-                    self.config.feedback_dir
+                    self.config.feedback_dir,
+                    self.config.correction_model_dir,
                 )
                 self._correction_signature = signature
             return self._correction_context
@@ -399,6 +404,27 @@ class LigWebService:
             waveforms,
             self._base_predictions(document),
             context=context,
+        )
+
+    @staticmethod
+    def _correction_dataset_label(
+        dataset: str, relative_path: str
+    ) -> str | None:
+        if dataset != "correction":
+            return None
+        parts = PurePath(relative_path.replace("\\", "/")).parts
+        return parts[0] if parts and parts[0] in CLASS_NAMES else None
+
+    @staticmethod
+    def _apply_dataset_label(prediction, dataset_label: str | None):
+        """Treat a correction-folder label as reviewed truth below manual feedback."""
+        if dataset_label is None or prediction.source == "manual_exact":
+            return prediction
+        return replace(
+            prediction,
+            effective_label=dataset_label,
+            source="dataset_label",
+            correction_similarity=None,
         )
 
     @staticmethod
@@ -422,6 +448,7 @@ class LigWebService:
     ) -> dict:
         document = self._load_document(dataset, relative_path)
         predictions = self._effective_predictions(document) if classify else None
+        dataset_label = self._correction_dataset_label(dataset, relative_path)
         summaries = []
         for index, (event_time, piece) in enumerate(document.pieces):
             item = {
@@ -433,7 +460,9 @@ class LigWebService:
                 "station_id": _json_scalar(piece.get("m_stationID")),
             }
             if predictions is not None and index < len(predictions):
-                prediction = predictions[index]
+                prediction = self._apply_dataset_label(
+                    predictions[index], dataset_label
+                )
                 item["classification"] = {
                     "label": prediction.effective_label,
                     "base_label": prediction.base_label,
@@ -497,6 +526,10 @@ class LigWebService:
             [base],
             context=self._get_correction_context(),
         )[0]
+        effective = self._apply_dataset_label(
+            effective,
+            self._correction_dataset_label(dataset, relative_path),
+        )
         return {
             "dataset": dataset,
             "path": relative_path,
@@ -680,7 +713,10 @@ class LigWebService:
 
             def train():
                 with self._inference_lock:
-                    run_feedback_training(self.config.feedback_dir)
+                    run_feedback_training(
+                        self.config.feedback_dir,
+                        self.config.correction_model_dir,
+                    )
                 self._invalidate_correction_context()
 
             self._training_thread = Thread(

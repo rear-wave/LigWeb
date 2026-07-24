@@ -38,6 +38,7 @@ class LigWebConfig:
     train_data_dir: Path
     correction_data_dir: Path
     feedback_dir: Path
+    model_dir: Path
     exports_dir: Path
     host: str = "0.0.0.0"
     port: int = 8088
@@ -71,6 +72,9 @@ class LigWebConfig:
                 "LIGEDIT_FEEDBACK_DIR",
             )
         ).expanduser()
+        model_dir = Path(
+            _env("LIGWEB_MODEL_DIR", repository_root / "runtime")
+        ).expanduser()
         exports_dir = Path(
             _env(
                 "LIGWEB_EXPORT_DIR",
@@ -83,6 +87,7 @@ class LigWebConfig:
             train_data_dir=train_data,
             correction_data_dir=correction_data,
             feedback_dir=feedback_dir,
+            model_dir=model_dir,
             exports_dir=exports_dir,
             host=str(_env("LIGWEB_HOST", "0.0.0.0", "LIGEDIT_HOST")),
             port=int(_env("LIGWEB_PORT", "8088", "LIGEDIT_PORT")),
@@ -109,7 +114,11 @@ class LigWebConfig:
 
     @property
     def main_model_dir(self) -> Path:
-        return self.feedback_dir / "main_model"
+        return self.model_dir / "main_model"
+
+    @property
+    def correction_model_dir(self) -> Path:
+        return self.model_dir
 
     @property
     def inbox_dir(self) -> Path:
@@ -129,7 +138,7 @@ class LigWebConfig:
 
     @property
     def ic_sync_status_path(self) -> Path:
-        return self.feedback_dir / "ic-sync.json"
+        return self.model_dir / "ic-sync.json"
 
     def ensure_directories(self) -> None:
         if not self.train_data_dir.is_dir():
@@ -138,6 +147,7 @@ class LigWebConfig:
             )
         self.correction_data_dir.mkdir(parents=True, exist_ok=True)
         self.feedback_dir.mkdir(parents=True, exist_ok=True)
+        self.model_dir.mkdir(parents=True, exist_ok=True)
         self.inbox_dir.mkdir(parents=True, exist_ok=True)
         self.exports_dir.mkdir(parents=True, exist_ok=True)
         self.main_model_dir.mkdir(parents=True, exist_ok=True)

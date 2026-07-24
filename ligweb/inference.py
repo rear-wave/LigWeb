@@ -431,7 +431,7 @@ def apply_correction(base, exact_label=None, suppressed=False, index=None,
     )
 
 
-def load_correction_context(feedback_dir=None):
+def load_correction_context(feedback_dir=None, correction_model_dir=None):
     """Load exact feedback and the active guarded adapter once per job."""
     from pathlib import Path
 
@@ -439,25 +439,30 @@ def load_correction_context(feedback_dir=None):
     from ligweb.feedback_store import FeedbackStore, default_feedback_dir
 
     root = Path(feedback_dir) if feedback_dir is not None else default_feedback_dir()
+    model_root = (
+        Path(correction_model_dir)
+        if correction_model_dir is not None
+        else Path(os.environ.get("LIGWEB_CORRECTION_MODEL_DIR", root))
+    )
     store = FeedbackStore(root / "feedback.sqlite3")
     records, _failures = store.list_records_with_failures()
     model_hash = get_base_model_hash()
     return CorrectionContext(
         records={record.waveform_hash: record for record in records},
-        index=load_active_index(root, model_hash),
+        index=load_active_index(model_root, model_hash),
         base_model_hash=model_hash,
     )
 
 
 def apply_feedback_batch(waveforms, base_predictions, context=None,
-                         feedback_dir=None):
+                         feedback_dir=None, correction_model_dir=None):
     """Apply exact feedback and the active correction model to base outputs."""
     from ligweb.feedback_store import waveform_digest
 
     if len(waveforms) != len(base_predictions):
         raise ValueError("waveforms and base_predictions must have equal lengths")
     if context is None:
-        context = load_correction_context(feedback_dir)
+        context = load_correction_context(feedback_dir, correction_model_dir)
 
     results = []
     for waveform, base in zip(waveforms, base_predictions):
@@ -802,10 +807,10 @@ def _event_is_daylight(event_time):
     return 5.5 <= local_hour < 19.0
 
 
-def get_correction_model_info(feedback_dir=None):
+def get_correction_model_info(feedback_dir=None, correction_model_dir=None):
     """Return user-facing metadata for the active feedback layer."""
     try:
-        context = load_correction_context(feedback_dir)
+        context = load_correction_context(feedback_dir, correction_model_dir)
         enabled_records = sum(
             1 for record in context.records.values() if record.enabled
         )

@@ -23,6 +23,7 @@ __pycache__/
 .venv/
 venv/
 webapp-data/
+runtime/
 .pytest_cache/
 .coverage
 

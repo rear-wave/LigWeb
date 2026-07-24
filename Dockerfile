@@ -7,9 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LIGWEB_TRAIN_DATA_DIR=/data/train \
     LIGWEB_CORRECTION_DATA_DIR=/data/correction \
     LIGWEB_FEEDBACK_DIR=/data/correction/.ligedit \
+    LIGWEB_MODEL_DIR=/data/runtime \
     LIGWEB_EXPORT_DIR=/data/correction/exports \
-    LIGWEB_BASE_MODEL_PATH=/data/correction/.ligedit/main_model/current.onnx \
-    LIGWEB_BASE_MODEL_METADATA_PATH=/data/correction/.ligedit/main_model/current.json \
+    LIGWEB_BASE_MODEL_PATH=/data/runtime/main_model/current.onnx \
+    LIGWEB_BASE_MODEL_METADATA_PATH=/data/runtime/main_model/current.json \
+    LIGWEB_CORRECTION_MODEL_DIR=/data/runtime \
     LIGWEB_AUTO_CORRECTION_TRAINING=1 \
     LIGWEB_AUTO_IC_SYNC=1
 

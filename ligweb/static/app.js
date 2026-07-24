@@ -745,7 +745,9 @@ function renderPieces() {
   pieces.forEach((piece) => {
     const row = document.createElement("div");
     const correction = piece.classification?.correction_model || {};
-    const manual = (correction.source || piece.classification?.source) === "manual_exact";
+    const secondaryKind = correction.source || piece.classification?.source;
+    const manual = secondaryKind === "manual_exact";
+    const datasetLabel = secondaryKind === "dataset_label";
     row.className = `piece-row${state.selectedPieceIndex === piece.index ? " active" : ""}${state.deleted.has(piece.index) ? " deleted" : ""}`;
     row.dataset.pieceIndex = String(piece.index);
     const checkbox = document.createElement("input");
@@ -762,10 +764,10 @@ function renderPieces() {
     const tag = document.createElement("span");
     const mainLabel = piece.classification?.main_model?.label || piece.classification?.base_label || "—";
     const secondaryLabel = correction.label || piece.classification?.label || "—";
-    const secondarySource = manual ? "人工" : "纠错";
+    const secondarySource = manual ? "人工" : (datasetLabel ? "数据集" : "纠错");
     tag.className = `class-tag${mainLabel !== secondaryLabel ? " differing" : ""}`;
     tag.textContent = `主 ${mainLabel} → ${secondarySource} ${secondaryLabel}`;
-    tag.title = `主模型：${mainLabel}；${manual ? "人工纠错" : "纠错模型"}：${secondaryLabel}`;
+    tag.title = `主模型：${mainLabel}；${manual ? "人工纠错" : (datasetLabel ? "纠错集标签" : "纠错模型")}：${secondaryLabel}`;
     row.append(checkbox, copy, tag);
     row.addEventListener("click", () => selectPiece(piece.index));
     row.addEventListener("dblclick", () => {
@@ -815,7 +817,7 @@ function renderDetail() {
   $("mainModelLabel").textContent = main.label;
   $("mainModelMeta").textContent = `置信度 ${(main.confidence * 100).toFixed(1)}%`;
   $("correctionModelLabel").textContent = correction.label;
-  const sourceNames = { base: "基础模型", manual_exact: "人工纠正", adapter: "纠错模型" };
+  const sourceNames = { base: "基础模型", manual_exact: "人工纠正", adapter: "纠错模型", dataset_label: "纠错集标签" };
   const similarity = correction.similarity === null || correction.similarity === undefined ? "" : ` · 相似度 ${(correction.similarity * 100).toFixed(1)}%`;
   $("correctionModelMeta").textContent = `${sourceNames[correction.source] || correction.source}${similarity}`;
   $("sourceBadge").textContent = sourceNames[classification.source] || classification.source;

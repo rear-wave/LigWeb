@@ -257,7 +257,7 @@ def promote_daily_corrections(
 def build_combined_dataset(
     train_root: Path,
     correction_root: Path,
-    feedback_dir: Path,
+    runtime_dir: Path,
     view: Path,
     validator: Callable[[Path], bool | None] | None = None,
 ) -> dict:
@@ -315,7 +315,7 @@ def run(args) -> dict:
     repository_root = Path(args.repository_root).resolve()
     train_root = Path(args.train_data).resolve()
     correction_root = Path(args.correction_data).resolve()
-    feedback_dir = Path(args.feedback_dir).resolve()
+    runtime_dir = Path(args.runtime_dir).resolve()
     ligclassify_root = Path(args.ligclassify_root).resolve()
     export_python = Path(args.export_python).resolve()
     training_environment = Path(sys.prefix).name
@@ -330,7 +330,7 @@ def run(args) -> dict:
         )
     if not export_python.is_file():
         raise FileNotFoundError(f"ONNX 导出 Python 不存在: {export_python}")
-    main_dir = feedback_dir / "main_model"
+    main_dir = runtime_dir / "main_model"
     work_dir = main_dir / "work"
     view = work_dir / "dataset"
     runs_dir = main_dir / "runs"
@@ -365,14 +365,14 @@ def run(args) -> dict:
         ic_sync = ICDataSynchronizer(
             correction_root,
             train_root,
-            feedback_dir / "ic-sync.json",
+            runtime_dir / "ic-sync.json",
         ).sync(force=True)
         if ic_sync.get("status") == "failed":
             raise RuntimeError(f"IC 自动同步失败: {ic_sync.get('reason', '')}")
         data_summary = build_combined_dataset(
             train_root,
             correction_root,
-            feedback_dir,
+            runtime_dir,
             view,
             validator=_validate_lig_file,
         )
@@ -481,7 +481,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--train-data", default=desktop / "train_data")
     parser.add_argument("--correction-data", default=desktop / "correct_data")
     parser.add_argument(
-        "--feedback-dir", default=desktop / "correct_data" / ".ligedit"
+        "--runtime-dir",
+        "--feedback-dir",
+        dest="runtime_dir",
+        default=Path(__file__).resolve().parents[1] / "runtime",
+        help="LigWeb runtime directory for main-model artifacts and status",
     )
     parser.add_argument("--ligclassify-root", default=desktop / "ligClassify")
     parser.add_argument(
@@ -506,7 +510,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    status_path = Path(args.feedback_dir) / "main_model" / "status.json"
+    status_path = Path(args.runtime_dir) / "main_model" / "status.json"
     status = MainTrainingStatus(status_path)
     try:
         result = run(args)

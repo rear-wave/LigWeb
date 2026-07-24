@@ -49,7 +49,9 @@ def test_clean_feedback_retrains_after_main_model_changes(tmp_path, monkeypatch)
 
 
 def test_all_cancelled_feedback_builds_empty_generation(tmp_path, monkeypatch):
-    store = FeedbackStore(tmp_path / "feedback.sqlite3")
+    feedback_dir = tmp_path / "feedback"
+    correction_model_dir = tmp_path / "runtime"
+    store = FeedbackStore(feedback_dir / "feedback.sqlite3")
     record = store.upsert_feedback(
         np.arange(64, dtype=np.uint16),
         "a.lig",
@@ -66,11 +68,13 @@ def test_all_cancelled_feedback_builds_empty_generation(tmp_path, monkeypatch):
         "ligweb.feedback_training.get_base_model_hash", lambda: "base-a"
     )
 
-    outcome = run_feedback_training(tmp_path)
+    outcome = run_feedback_training(feedback_dir, correction_model_dir)
 
     assert outcome.status == "activated"
     assert outcome.record_count == 0
     assert store.is_dirty() is False
+    assert (correction_model_dir / "active.json").is_file()
+    assert not (feedback_dir / "active.json").exists()
 
 
 def test_enabled_feedback_rebuilds_with_bundled_onnx(tmp_path, monkeypatch):

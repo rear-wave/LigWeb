@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--status",
-        default=desktop / "correct_data" / ".ligedit" / "ic-sync.json",
+        default=Path(__file__).resolve().parents[1] / "runtime" / "ic-sync.json",
     )
     return parser
 
