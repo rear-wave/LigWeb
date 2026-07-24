@@ -31,7 +31,7 @@ from ligweb.correction_dataset import (
 )
 from ligweb.feedback_store import CLASS_NAMES, FeedbackStore, waveform_digest
 from ligweb.feedback_training import run_feedback_training
-from ligweb.ic_sync import ICCorrectionPromoter
+from ligweb.ic_sync import ICDatasetMirror
 from ligweb.lig_io import save_lig_file
 from ligweb.lig_parser import (
     ButterFilter,
@@ -147,10 +147,10 @@ class LigWebService:
             ),
             enabled=self.config.auto_correction_training,
         )
-        self._ic_promoter = ICCorrectionPromoter(
+        self._ic_mirror = ICDatasetMirror(
             self.config.correction_data_dir,
             self.config.train_data_dir,
-            self.config.ic_promotion_status_path,
+            self.config.ic_mirror_status_path,
         )
 
     def start_scheduler(self) -> None:
@@ -159,8 +159,8 @@ class LigWebService:
     def stop_scheduler(self) -> None:
         self._correction_scheduler.stop()
 
-    def ic_promotion_status(self) -> dict:
-        return self._ic_promoter.status()
+    def ic_mirror_status(self) -> dict:
+        return self._ic_mirror.status()
 
     def _resolve_dataset_file(self, dataset: str, relative_path: str) -> Path:
         root = self.config.dataset_root(dataset).resolve()
@@ -667,8 +667,8 @@ class LigWebService:
             "correction_enabled": self.config.auto_correction_training,
             "correction_schedule": "每逢整点",
             "next_correction_training": next_hour(now).isoformat(),
-            "ic_promotion_enabled": True,
-            "ic_promotion_schedule": "每天 22:00，主模型训练前",
+            "ic_mirror_enabled": True,
+            "ic_mirror_schedule": "每天 22:00，主模型训练前",
             "main_schedule": "每天 22:00",
             "next_main_training": next_daily_22(now).isoformat(),
         }
@@ -679,7 +679,7 @@ class LigWebService:
             **correction,
             "correction": correction,
             "main": self.main_training_status(),
-            "ic_promotion": self._ic_promoter.status(),
+            "ic_mirror": self._ic_mirror.status(),
             "automation": self.automation_status(),
         }
 
@@ -811,7 +811,7 @@ class LigWebService:
             "duplicate_skipped_indices": duplicate_skipped_indices,
             "skipped_indices": duplicate_skipped_indices,
             "reclassified_piece_count": reclassified_piece_count,
-            "ic_promotion": None,
+            "ic_mirror": None,
             "source_removed": source_removed,
         }
 

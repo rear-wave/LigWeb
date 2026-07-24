@@ -131,8 +131,8 @@ class LigWebConfig:
         return self.main_model_dir / "status.json"
 
     @property
-    def ic_promotion_status_path(self) -> Path:
-        return self.model_dir / "ic-promotion.json"
+    def ic_mirror_status_path(self) -> Path:
+        return self.model_dir / "ic-mirror.json"
 
     def ensure_directories(self) -> None:
         if not self.train_data_dir.is_dir():

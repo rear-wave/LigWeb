@@ -478,7 +478,7 @@ def test_fastapi_factory_registers_api_and_static_routes(tmp_path):
     assert "/api/health" in paths
     assert "/api/feedback" in paths
     assert "/api/training" in paths
-    assert "/api/ic-promotion" in paths
+    assert "/api/ic-mirror" in paths
     assert "/api/correction-imports" in paths
     assert "/api/export/daynight" in paths
     assert "/api/files/{dataset}/{file_path:path}/save" in paths

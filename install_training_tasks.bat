@@ -7,7 +7,7 @@ schtasks /Create /TN "%TASK_NAME%" /SC DAILY /ST 22:00 /TR "%TRAIN_COMMAND%" /F
 if errorlevel 1 goto user_session
 echo Installed scheduled task: %TASK_NAME%
 echo Main model will retrain every day at 22:00 (Asia/Shanghai server time).
-echo Correction-model training runs inside LigWeb; IC migration runs in this task.
+echo Correction-model training runs inside LigWeb; IC mirroring runs in this task.
 exit /b 0
 :user_session
 echo Windows Task Scheduler is unavailable; installing the per-user startup scheduler.

@@ -16,7 +16,7 @@ import time
 from typing import Callable
 
 from ligweb.feedback_store import CLASS_NAMES
-from ligweb.ic_sync import ICCorrectionPromoter
+from ligweb.ic_sync import ICDatasetMirror
 from tools.export_ligclassify_model import _work_around_broken_windows_asyncio
 
 
@@ -345,21 +345,21 @@ def run(args) -> dict:
             (
                 "正在检查主模型训练数据"
                 if args.audit_only
-                else "正在去重迁移纠错集 IC 并校验主模型训练数据"
+                else "正在用纠错集完整重建训练集 IC 并校验训练数据"
             ),
             python_executable=sys.executable,
         )
-        ic_promotion = ICCorrectionPromoter(
+        ic_mirror = ICDatasetMirror(
             correction_root,
             train_root,
-            runtime_dir / "ic-promotion.json",
+            runtime_dir / "ic-mirror.json",
         )
-        ic_promotion_summary = (
-            ic_promotion.audit() if args.audit_only else ic_promotion.promote()
+        ic_mirror_summary = (
+            ic_mirror.audit() if args.audit_only else ic_mirror.synchronize()
         )
-        if ic_promotion_summary.get("status") == "failed":
+        if ic_mirror_summary.get("status") == "failed":
             raise RuntimeError(
-                f"IC 迁移失败: {ic_promotion_summary.get('reason', '')}"
+                f"IC 复制失败: {ic_mirror_summary.get('reason', '')}"
             )
         promotion_summary = (
             {
@@ -389,7 +389,7 @@ def run(args) -> dict:
             result = {
                 "data": data_summary,
                 "promotion": promotion_summary,
-                "ic_promotion": ic_promotion_summary,
+                "ic_mirror": ic_mirror_summary,
                 "python_executable": sys.executable,
                 "export_python": str(export_python),
             }
@@ -403,7 +403,7 @@ def run(args) -> dict:
             "正在使用合并数据重新训练主模型",
             data=data_summary,
             promotion=promotion_summary,
-            ic_promotion=ic_promotion_summary,
+            ic_mirror=ic_mirror_summary,
             output=str(output),
             python_executable=sys.executable,
             export_python=str(export_python),
@@ -438,7 +438,7 @@ def run(args) -> dict:
             "训练完成，正在校验并激活 ONNX 主模型",
             data=data_summary,
             promotion=promotion_summary,
-            ic_promotion=ic_promotion_summary,
+            ic_mirror=ic_mirror_summary,
             output=str(output),
             python_executable=sys.executable,
             export_python=str(export_python),
@@ -466,7 +466,7 @@ def run(args) -> dict:
         result = {
             "data": data_summary,
             "promotion": promotion_summary,
-            "ic_promotion": ic_promotion_summary,
+            "ic_mirror": ic_mirror_summary,
             "output": str(output),
             "best_epoch": metrics.get("best_epoch"),
             "best_score": metrics.get("best_score"),

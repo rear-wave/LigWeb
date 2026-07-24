@@ -3,7 +3,7 @@ import struct
 import numpy as np
 
 from ligweb.correction_dataset import read_stored_lig
-from ligweb.ic_sync import ICCorrectionPromoter
+from ligweb.ic_sync import ICDatasetMirror
 
 
 def _gps_time(hour=8):
@@ -52,86 +52,135 @@ def _write_lig(path, waveforms):
     )
 
 
-def test_ic_promotion_appends_only_new_waveforms_then_deletes_source(tmp_path):
+def _hashes(root):
+    result = set()
+    for path in root.rglob("*.lig"):
+        result.update(piece.digest for piece in read_stored_lig(path).pieces)
+    return result
+
+
+def test_ic_mirror_replaces_training_data_and_retains_correction_files(tmp_path):
     train = tmp_path / "train_data"
     correction = tmp_path / "correct_data"
-    status = tmp_path / "runtime" / "ic-promotion.json"
+    status = tmp_path / "runtime" / "ic-mirror.json"
     first = np.arange(16_000, dtype=np.uint16)
     second = first + 7
-    target = train / "IC" / "reviewed.lig"
-    source = correction / "IC" / "reviewed.lig"
-    _write_lig(target, [first])
-    _write_lig(source, [first, second])
+    obsolete = first + 14
+    primary = correction / "IC" / "reviewed.lig"
+    duplicate = correction / "IC" / "nested" / "duplicate.lig"
+    _write_lig(primary, [first, second])
+    _write_lig(duplicate, [first])
+    _write_lig(train / "IC" / "obsolete.lig", [obsolete])
+    source_bytes = {
+        primary: primary.read_bytes(),
+        duplicate: duplicate.read_bytes(),
+    }
 
-    result = ICCorrectionPromoter(correction, train, status).promote()
+    result = ICDatasetMirror(correction, train, status).synchronize()
 
-    assert result["status"] == "promoted"
-    assert result["source_pieces"] == 2
-    assert result["moved_pieces"] == 1
+    assert result["status"] == "synced"
+    assert result["source_files"] == 2
+    assert result["source_pieces"] == 3
+    assert result["copied_files"] == 2
+    assert result["copied_pieces"] == 2
     assert result["duplicate_pieces"] == 1
-    assert result["deleted_files"] == 1
-    assert not source.exists()
-    assert len(read_stored_lig(target).pieces) == 2
+    assert result["cleared_files"] == 1
+    assert result["cleared_pieces"] == 1
+    assert result["source_retained"] is True
+    assert not (train / "IC" / "obsolete.lig").exists()
+    assert len(_hashes(train / "IC")) == 2
+    for path, payload in source_bytes.items():
+        assert path.read_bytes() == payload
 
 
-def test_ic_promotion_deletes_source_when_all_waveforms_already_exist(tmp_path):
-    train = tmp_path / "train_data"
-    correction = tmp_path / "correct_data"
-    values = np.arange(16_000, dtype=np.uint16)
-    source = correction / "IC" / "duplicate.lig"
-    _write_lig(train / "IC" / "existing.lig", [values])
-    _write_lig(source, [values])
-
-    result = ICCorrectionPromoter(correction, train).promote()
-
-    assert result["moved_pieces"] == 0
-    assert result["duplicate_pieces"] == 1
-    assert result["deleted_files"] == 1
-    assert not source.exists()
-    assert not (train / "IC" / "duplicate.lig").exists()
-
-
-def test_ic_promotion_audit_does_not_change_data(tmp_path):
+def test_ic_mirror_audit_does_not_change_either_dataset(tmp_path):
     train = tmp_path / "train_data"
     correction = tmp_path / "correct_data"
     source = correction / "IC" / "pending.lig"
+    target = train / "IC" / "existing.lig"
     _write_lig(source, [np.arange(16_000, dtype=np.uint16)])
+    _write_lig(target, [np.arange(16_000, dtype=np.uint16) + 7])
+    source_payload = source.read_bytes()
+    target_payload = target.read_bytes()
 
-    result = ICCorrectionPromoter(correction, train).audit()
+    result = ICDatasetMirror(correction, train).audit()
 
     assert result["status"] == "audited"
-    assert result["moved_pieces"] == 1
-    assert result["deleted_files"] == 0
-    assert source.exists()
-    assert not train.exists()
+    assert result["copied_pieces"] == 1
+    assert source.read_bytes() == source_payload
+    assert target.read_bytes() == target_payload
 
 
-def test_ic_promotion_keeps_source_when_target_write_fails(tmp_path, monkeypatch):
-    train = tmp_path / "train_data"
-    correction = tmp_path / "correct_data"
-    source = correction / "IC" / "pending.lig"
-    _write_lig(source, [np.arange(16_000, dtype=np.uint16)])
-
-    def fail_write(*_args, **_kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr("ligweb.ic_sync.write_stored_lig", fail_write)
-    result = ICCorrectionPromoter(correction, train).promote()
-
-    assert result["status"] == "failed"
-    assert "disk full" in result["reason"]
-    assert source.exists()
-
-
-def test_ic_promotion_keeps_source_if_it_changes_during_write(
+def test_ic_mirror_keeps_old_training_data_when_staging_write_fails(
     tmp_path, monkeypatch
 ):
     train = tmp_path / "train_data"
     correction = tmp_path / "correct_data"
     source = correction / "IC" / "pending.lig"
+    target = train / "IC" / "existing.lig"
+    _write_lig(source, [np.arange(16_000, dtype=np.uint16)])
+    _write_lig(target, [np.arange(16_000, dtype=np.uint16) + 7])
+    source_payload = source.read_bytes()
+    target_payload = target.read_bytes()
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("ligweb.ic_sync.write_stored_lig", fail_write)
+    result = ICDatasetMirror(correction, train).synchronize()
+
+    assert result["status"] == "failed"
+    assert "disk full" in result["reason"]
+    assert source.read_bytes() == source_payload
+    assert target.read_bytes() == target_payload
+
+
+def test_ic_mirror_rolls_back_when_directory_install_fails(tmp_path, monkeypatch):
+    train = tmp_path / "train_data"
+    correction = tmp_path / "correct_data"
+    source = correction / "IC" / "pending.lig"
+    target = train / "IC" / "existing.lig"
+    _write_lig(source, [np.arange(16_000, dtype=np.uint16)])
+    _write_lig(target, [np.arange(16_000, dtype=np.uint16) + 7])
+    source_payload = source.read_bytes()
+    target_payload = target.read_bytes()
+
+    from ligweb import ic_sync
+
+    original_replace = ic_sync.os.replace
+    target_root = (train / "IC").resolve()
+
+    def fail_staging_install(source_path, target_path):
+        source_path = ic_sync.Path(source_path)
+        target_path = ic_sync.Path(target_path)
+        if (
+            source_path.name.startswith(".ligweb-ic-staging-")
+            and target_path.resolve() == target_root
+        ):
+            raise OSError("install failed")
+        return original_replace(source_path, target_path)
+
+    monkeypatch.setattr(ic_sync.os, "replace", fail_staging_install)
+    result = ICDatasetMirror(correction, train).synchronize()
+
+    assert result["status"] == "failed"
+    assert "install failed" in result["reason"]
+    assert source.read_bytes() == source_payload
+    assert target.read_bytes() == target_payload
+
+
+def test_ic_mirror_keeps_old_training_data_if_correction_changes(
+    tmp_path, monkeypatch
+):
+    train = tmp_path / "train_data"
+    correction = tmp_path / "correct_data"
+    source = correction / "IC" / "pending.lig"
+    target = train / "IC" / "existing.lig"
     first = np.arange(16_000, dtype=np.uint16)
     second = first + 7
     _write_lig(source, [first])
+    _write_lig(target, [second])
+    target_payload = target.read_bytes()
 
     from ligweb import ic_sync
 
@@ -142,8 +191,27 @@ def test_ic_promotion_keeps_source_if_it_changes_during_write(
         _write_lig(source, [first, second])
 
     monkeypatch.setattr(ic_sync, "write_stored_lig", write_then_change)
-    result = ICCorrectionPromoter(correction, train).promote()
+    result = ICDatasetMirror(correction, train).synchronize()
 
     assert result["status"] == "failed"
-    assert "发生变化" in result["reason"]
+    assert "纠错集 IC 发生变化" in result["reason"]
+    assert target.read_bytes() == target_payload
     assert len(read_stored_lig(source).pieces) == 2
+
+
+def test_ic_mirror_replaces_malformed_old_training_file(tmp_path):
+    train = tmp_path / "train_data"
+    correction = tmp_path / "correct_data"
+    source = correction / "IC" / "pending.lig"
+    malformed = train / "IC" / "broken.lig"
+    _write_lig(source, [np.arange(16_000, dtype=np.uint16)])
+    malformed.parent.mkdir(parents=True, exist_ok=True)
+    malformed.write_bytes(b"broken")
+
+    result = ICDatasetMirror(correction, train).synchronize()
+
+    assert result["status"] == "synced"
+    assert result["cleared_invalid_files"] == 1
+    assert not malformed.exists()
+    assert len(_hashes(train / "IC")) == 1
+    assert source.exists()

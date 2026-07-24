@@ -89,7 +89,7 @@ def create_app(config: LigWebConfig | None = None) -> FastAPI:
             "train_data_available": config.train_data_dir.is_dir(),
             "correction_data_available": config.correction_data_dir.is_dir(),
             "training": service.training_status(),
-            "ic_promotion": service.ic_promotion_status(),
+            "ic_mirror": service.ic_mirror_status(),
         }
 
     @application.get("/api/config")
@@ -165,9 +165,9 @@ def create_app(config: LigWebConfig | None = None) -> FastAPI:
     def automation_status():
         return service.automation_status()
 
-    @application.get("/api/ic-promotion")
-    def ic_promotion_status():
-        return service.ic_promotion_status()
+    @application.get("/api/ic-mirror")
+    def ic_mirror_status():
+        return service.ic_mirror_status()
 
     @application.post("/api/training")
     def train():
