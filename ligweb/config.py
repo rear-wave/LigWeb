@@ -68,7 +68,7 @@ class LigWebConfig:
         feedback_dir = Path(
             _env(
                 "LIGWEB_FEEDBACK_DIR",
-                correction_data / ".ligedit",
+                repository_root / "runtime",
                 "LIGEDIT_FEEDBACK_DIR",
             )
         ).expanduser()
@@ -78,7 +78,7 @@ class LigWebConfig:
         exports_dir = Path(
             _env(
                 "LIGWEB_EXPORT_DIR",
-                correction_data / "exports",
+                repository_root / "runtime" / "exports",
                 "LIGEDIT_EXPORT_DIR",
             )
         ).expanduser()

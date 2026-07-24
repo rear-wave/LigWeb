@@ -7,10 +7,11 @@ LigWeb is a Python 3.11 LAN web application for `.lig` waveform review and train
 ## Data and Configuration
 
 Never commit waveform datasets, runtime state, or model weights. Host defaults
-are `Desktop\train_data` and `Desktop\correct_data`; feedback and inbox state
-remain under `correct_data\.ligedit`, while main/correction model artifacts live
-under the ignored `LigWeb\runtime` directory. Use `LIGWEB_*` variables from
-`.env.example` for overrides. Resolve all API paths beneath configured roots.
+are `Desktop\train_data` and `Desktop\correct_data`; the correction root contains
+only the five label directories. Feedback, inbox, exports, backups, logs, and
+model artifacts live under the ignored `LigWeb\runtime` directory. Use
+`LIGWEB_*` variables from `.env.example` for overrides. Resolve all API paths
+beneath configured roots.
 
 ## Development Commands
 

@@ -20,9 +20,9 @@ def _config(tmp_path):
         repository_root=tmp_path,
         train_data_dir=train,
         correction_data_dir=correction,
-        feedback_dir=correction / ".ligedit",
+        feedback_dir=tmp_path / "runtime",
         model_dir=tmp_path / "runtime",
-        exports_dir=correction / "exports",
+        exports_dir=tmp_path / "runtime" / "exports",
         max_cached_files=2,
         auto_ic_sync=False,
     )
@@ -238,9 +238,11 @@ def test_correction_folder_label_overrides_non_manual_model_result(
 def test_model_runtime_is_separate_from_correction_dataset(tmp_path):
     config = _config(tmp_path)
 
-    assert config.feedback_dir == config.correction_data_dir / ".ligedit"
+    assert config.feedback_dir == tmp_path / "runtime"
     assert config.main_model_dir == tmp_path / "runtime" / "main_model"
     assert config.correction_model_dir == tmp_path / "runtime"
+    assert config.inbox_dir == tmp_path / "runtime" / "inbox"
+    assert config.exports_dir == tmp_path / "runtime" / "exports"
 
 
 def test_reviewed_import_uses_manual_and_model_results(tmp_path, monkeypatch):

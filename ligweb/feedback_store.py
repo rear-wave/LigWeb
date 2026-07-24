@@ -36,10 +36,10 @@ class FeedbackRecord:
 
 
 def default_feedback_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA")
-    if not root:
-        root = str(Path.home() / "AppData" / "Local")
-    return Path(root) / "LigWeb" / "feedback"
+    configured = os.environ.get("LIGWEB_FEEDBACK_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return Path(__file__).resolve().parents[1] / "runtime"
 
 
 def _canonical_waveform(waveform: np.ndarray) -> np.ndarray:

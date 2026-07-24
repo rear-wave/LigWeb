@@ -115,6 +115,29 @@ def remove_waveforms(root: Path, digests: set[str]) -> int:
     return removed
 
 
+def _maintenance_root(root: Path, workspace_root: Path | None) -> Path:
+    root = Path(root).resolve()
+    workspace = (
+        Path(workspace_root)
+        if workspace_root is not None
+        else Path(
+            os.environ.get(
+                "LIGWEB_MODEL_DIR",
+                Path(__file__).resolve().parents[1] / "runtime",
+            )
+        )
+        / "dataset-maintenance"
+    ).resolve()
+    try:
+        workspace.relative_to(root)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("dataset maintenance workspace must be outside correct_data")
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
+
+
 def _source_priority(path: Path, root: Path) -> tuple[int, str]:
     stem = path.stem.lower()
     if "_corrected_" in stem:
@@ -131,6 +154,7 @@ def _source_priority(path: Path, root: Path) -> tuple[int, str]:
 def deduplicate_dataset(
     root: Path,
     apply: bool = False,
+    workspace_root: Path | None = None,
 ) -> dict:
     """Flatten and globally deduplicate correction pieces by waveform content."""
     root = Path(root).resolve()
@@ -179,8 +203,7 @@ def deduplicate_dataset(
     if not apply:
         return result
 
-    system_root = (root / ".ligedit").resolve()
-    system_root.relative_to(root)
+    system_root = _maintenance_root(root, workspace_root)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_root = system_root / "dedup-backups" / stamp
     staging_root = system_root / f"dedup-staging-{stamp}"
@@ -240,7 +263,7 @@ def restore_dataset_backup(root: Path, backup: Path) -> dict:
     """Restore a validated class-folder backup while snapshotting active data."""
     root = Path(root).resolve()
     backup = Path(backup).resolve()
-    system_root = (root / ".ligedit").resolve()
+    system_root = _maintenance_root(root, None)
     backups_root = (system_root / "dedup-backups").resolve()
     backup.relative_to(backups_root)
     if not backup.is_dir():
@@ -298,6 +321,134 @@ def restore_dataset_backup(root: Path, backup: Path) -> dict:
             "pieces": audit["unique_pieces"],
         }
         (active_backup / "restore-report.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return result
+    finally:
+        if staging_root.exists():
+            staging_root.resolve().relative_to(system_root)
+            shutil.rmtree(staging_root)
+
+
+def reclassify_dataset(
+    root: Path,
+    labels_by_digest: dict[str, str],
+    apply: bool = False,
+    workspace_root: Path | None = None,
+) -> dict:
+    """Split every correction file by its resolved per-waveform label."""
+    root = Path(root).resolve()
+    if root.parent == root or not root.name:
+        raise ValueError(f"unsafe correction dataset root: {root}")
+
+    files = list(iter_dataset_files(root))
+    seen: set[str] = set()
+    grouped: dict[tuple[str, str], dict] = {}
+    duplicate_count = 0
+    relabeled_count = 0
+    input_pieces = 0
+    pieces_by_source = {label: 0 for label in CLASS_NAMES}
+    pieces_by_target = {label: 0 for label in CLASS_NAMES}
+    relabeled_by_route: dict[str, int] = {}
+
+    for source_path in files:
+        relative = source_path.relative_to(root)
+        source_label = relative.parts[0]
+        stored = read_stored_lig(source_path)
+        output_name = default_lig_name(source_path.name)
+        for piece in stored.pieces:
+            input_pieces += 1
+            target_label = labels_by_digest.get(piece.digest)
+            if target_label not in CLASS_NAMES:
+                raise ValueError(
+                    f"missing or invalid resolved label for waveform {piece.digest}"
+                )
+            if piece.digest in seen:
+                duplicate_count += 1
+                continue
+            seen.add(piece.digest)
+            pieces_by_source[source_label] += 1
+            pieces_by_target[target_label] += 1
+            if source_label != target_label:
+                relabeled_count += 1
+                route = f"{source_label}->{target_label}"
+                relabeled_by_route[route] = relabeled_by_route.get(route, 0) + 1
+            key = target_label, output_name.casefold()
+            group = grouped.setdefault(
+                key,
+                {
+                    "label": target_label,
+                    "name": output_name,
+                    "header": stored.header,
+                    "pieces": [],
+                },
+            )
+            group["pieces"].append(piece)
+
+    result = {
+        "root": str(root),
+        "input_files": len(files),
+        "input_pieces": input_pieces,
+        "unique_pieces": len(seen),
+        "duplicate_pieces_removed": duplicate_count,
+        "relabeled_pieces": relabeled_count,
+        "pieces_by_source": pieces_by_source,
+        "pieces_by_target": pieces_by_target,
+        "relabeled_by_route": dict(sorted(relabeled_by_route.items())),
+        "output_files": sum(bool(group["pieces"]) for group in grouped.values()),
+        "applied": False,
+        "backup_dir": None,
+    }
+    if not apply:
+        return result
+
+    system_root = _maintenance_root(root, workspace_root)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_root = system_root / "reclassification-backups" / stamp
+    staging_root = system_root / f"reclassification-staging-{stamp}"
+    if backup_root.exists() or staging_root.exists():
+        raise FileExistsError(f"reclassification workspace already exists: {stamp}")
+
+    staging_root.mkdir(parents=True)
+    for label in CLASS_NAMES:
+        (staging_root / label).mkdir()
+    try:
+        for group in grouped.values():
+            if group["pieces"]:
+                write_stored_lig(
+                    staging_root / group["label"] / group["name"],
+                    group["header"],
+                    group["pieces"],
+                )
+        if len(waveform_index(staging_root)) != len(seen):
+            raise ValueError("staged correction dataset failed validation")
+
+        backup_root.mkdir(parents=True)
+        moved_old: list[tuple[Path, Path]] = []
+        installed: list[tuple[Path, Path]] = []
+        try:
+            for label in CLASS_NAMES:
+                active = (root / label).resolve()
+                active.relative_to(root)
+                backup = backup_root / label
+                staged = staging_root / label
+                if active.exists():
+                    shutil.move(str(active), str(backup))
+                    moved_old.append((backup, active))
+                shutil.move(str(staged), str(active))
+                installed.append((active, staged))
+        except Exception:
+            for active, staged in reversed(installed):
+                if active.exists():
+                    shutil.move(str(active), str(staged))
+            for backup, active in reversed(moved_old):
+                if backup.exists():
+                    shutil.move(str(backup), str(active))
+            raise
+
+        result["applied"] = True
+        result["backup_dir"] = str(backup_root)
+        (backup_root / "reclassification-report.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         return result

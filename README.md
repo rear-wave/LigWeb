@@ -7,16 +7,16 @@ LigWeb 是独立的局域网 `.lig` 波形审核、分类和训练服务。浏�
 数据始终位于宿主机，不进入仓库：
 
 - `Desktop\train_data`：五分类训练集。
-- `Desktop\correct_data`：已审核纠错数据和导出。
-- `correct_data\.ligedit`：反馈数据库和待处理文件。
-- `LigWeb\runtime`：主模型、纠错模型、训练输出和调度状态。
+- `Desktop\correct_data`：只保存五个类别目录中的已审核纠错数据。
+- `LigWeb\runtime`：反馈数据库、待处理文件、导出、主/纠错模型、
+  训练输出、备份和调度状态。
 
 路径可通过 `.env.example` 中的 `LIGWEB_*` 环境变量覆盖。
 `runtime/` 已加入 Git 忽略列表，并作为持久卷挂载到 Docker 容器。
 
-纠错集的一级目录名就是审核标签。例如打开
-`correct_data\IC\sample.lig` 时，主模型仍独立显示预测结果，但纠错结果采用
-`IC`；人工再次纠正时，人工标签优先。
+加入纠错集时会逐个波形片段采用“人工结果优先，否则采用纠错模型结果”，
+再分别写入 `IC/NCG/NNBE/PCG/PNBE` 目录。一个来源 `.lig` 中的不同类别
+不会再被整体放进同一类别目录。
 
 ## IC 自动同步
 
