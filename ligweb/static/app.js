@@ -745,9 +745,6 @@ function renderPieces() {
   pieces.forEach((piece) => {
     const row = document.createElement("div");
     const correction = piece.classification?.correction_model || {};
-    const secondaryKind = correction.source || piece.classification?.source;
-    const manual = secondaryKind === "manual_exact";
-    const datasetLabel = secondaryKind === "dataset_label";
     row.className = `piece-row${state.selectedPieceIndex === piece.index ? " active" : ""}${state.deleted.has(piece.index) ? " deleted" : ""}`;
     row.dataset.pieceIndex = String(piece.index);
     const checkbox = document.createElement("input");
@@ -763,11 +760,10 @@ function renderPieces() {
     copy.innerHTML = `<strong>${escapeHtml(piece.display_time)}</strong><small>#${piece.index + 1} · ${piece.daynight} · ${piece.sample_count} 点</small>`;
     const tag = document.createElement("span");
     const mainLabel = piece.classification?.main_model?.label || piece.classification?.base_label || "—";
-    const secondaryLabel = correction.label || piece.classification?.label || "—";
-    const secondarySource = manual ? "人工" : (datasetLabel ? "数据集" : "纠错");
-    tag.className = `class-tag${mainLabel !== secondaryLabel ? " differing" : ""}`;
-    tag.textContent = `主 ${mainLabel} → ${secondarySource} ${secondaryLabel}`;
-    tag.title = `主模型：${mainLabel}；${manual ? "人工纠错" : (datasetLabel ? "纠错集标签" : "纠错模型")}：${secondaryLabel}`;
+    const correctedLabel = piece.classification?.label || correction.label || "—";
+    tag.className = `class-tag${mainLabel !== correctedLabel ? " differing" : ""}`;
+    tag.textContent = correctedLabel;
+    tag.title = `纠错后结果：${correctedLabel}`;
     row.append(checkbox, copy, tag);
     row.addEventListener("click", () => selectPiece(piece.index));
     row.addEventListener("dblclick", () => {
