@@ -57,6 +57,47 @@ def test_different_base_class_and_split_votes_fall_back():
     )
 
 
+def test_base_preserving_neighbors_are_not_reported_as_corrections():
+    rows = [
+        CorrectionRow(_unit(1, offset), "NCG", "NCG")
+        for offset in (0.00, 0.01, -0.01)
+    ]
+    index = CorrectionIndex.from_rows(rows, "base-a", 1, threshold=0.90)
+
+    decision = resolve_correction("NCG", _unit(1, 0), None, False, index)
+
+    assert (decision.label, decision.source) == ("NCG", "base")
+
+
+def test_nearer_base_preserving_example_blocks_unsafe_generalization():
+    rows = [
+        CorrectionRow(_unit(1, offset), "NCG", "PCG")
+        for offset in (0.01, 0.02, 0.03, 0.04)
+    ] + [
+        CorrectionRow(_unit(1, 0.0), "NCG", "NCG")
+    ]
+    index = CorrectionIndex.from_rows(rows, "base-a", 1, threshold=0.90)
+
+    decision = resolve_correction("NCG", _unit(1, 0), None, False, index)
+
+    assert (decision.label, decision.source) == ("NCG", "base")
+
+
+def test_candidate_precision_ignores_adapter_noop_votes():
+    rows = [
+        CorrectionRow(_unit(1, offset), "NCG", "PCG")
+        for offset in (0.01, 0.02, 0.03, 0.04)
+    ] + [
+        CorrectionRow(_unit(1, offset), "NCG", "NCG")
+        for offset in (0.00, 0.005, -0.005, 0.015, -0.015)
+    ]
+
+    candidate = build_candidate(rows, "base-a", generation=2)
+
+    assert candidate.threshold is None
+    assert candidate.validation_coverage == 0
+
+
 def test_index_normalizes_valid_features():
     index = CorrectionIndex.from_rows(
         [CorrectionRow(np.array([3.0, 4.0]), "NCG", "PCG")],
@@ -222,6 +263,7 @@ def test_artifact_uses_non_object_arrays_and_validates_requested_model(tmp_path)
     generation_dir = save_generation(tmp_path, index)
     metadata = json.loads((generation_dir / "metadata.json").read_text("utf-8"))
     assert metadata["schema"] == "ligedit_correction_v1"
+    assert metadata["algorithm_version"] == "similarity-change-v4"
     assert metadata["feature_dimension"] == 2
     assert metadata["adapter_sha256"] == hashlib.sha256(
         (generation_dir / "adapter.npz").read_bytes()

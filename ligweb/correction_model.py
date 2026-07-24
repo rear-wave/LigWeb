@@ -12,16 +12,14 @@ import numpy as np
 
 
 CLASS_NAMES = ("IC", "NCG", "NNBE", "PCG", "PNBE")
-MIN_SUPPORT = 3
+MIN_SUPPORT = 2
 MIN_AGREEMENT = 0.80
 MIN_VALIDATION_PRECISION = 0.90
-LOCAL_MIN_CLASS_EXAMPLES = 2
-LOCAL_MIN_SIMILARITY = 0.80
-LOCAL_RADIUS_MARGIN = 0.03
-LOCAL_CONFLICT_MARGIN = 0.03
-CORRECTION_ALGORITHM_VERSION = "large-dataset-v3"
+MIN_CHANGE_SIMILARITY = 0.90
+NEGATIVE_SIMILARITY_MARGIN = 0.002
+CORRECTION_CONFLICT_MARGIN = 0.002
+CORRECTION_ALGORITHM_VERSION = "similarity-change-v4"
 MAX_NEIGHBORS = 5
-MAX_EXHAUSTIVE_TRAINING_ROWS = 64
 MAX_VALIDATION_ROWS = 256
 ARTIFACT_SCHEMA = "ligedit_correction_v1"
 
@@ -118,72 +116,6 @@ def _normalize_feature(feature) -> np.ndarray:
     return value / norm
 
 
-def _local_cluster_specs(index: CorrectionIndex):
-    """Build conservative per-label neighborhoods from repeated corrections."""
-    specs = []
-    pairs = sorted(set(zip(
-        index.base_labels.tolist(), index.corrected_labels.tolist()
-    )))
-    for base_label, corrected_label in pairs:
-        positions = np.flatnonzero(
-            (index.base_labels == base_label)
-            & (index.corrected_labels == corrected_label)
-        )
-        if len(positions) < LOCAL_MIN_CLASS_EXAMPLES:
-            continue
-        threshold = max(
-            LOCAL_MIN_SIMILARITY,
-            float(index.threshold or LOCAL_MIN_SIMILARITY),
-        )
-        specs.append((base_label, corrected_label, positions, threshold))
-    return specs
-
-
-def _resolve_local_cluster(base_label, feature, index):
-    """Correct near repeated examples while rejecting class-boundary ambiguity."""
-    try:
-        query = _normalize_feature(feature)
-    except (TypeError, ValueError):
-        return CorrectionDecision(base_label, "base")
-
-    matching = np.flatnonzero(index.base_labels == base_label)
-    if matching.size == 0:
-        return CorrectionDecision(base_label, "base")
-    all_similarities = index.features[matching] @ query
-    nearest_position = matching[int(np.argmax(all_similarities))]
-    nearest_label = str(index.corrected_labels[nearest_position])
-
-    candidates = []
-    for cluster_base, corrected_label, positions, threshold in _local_cluster_specs(index):
-        if cluster_base != base_label:
-            continue
-        similarities = index.features[positions] @ query
-        support = int(np.count_nonzero(similarities >= threshold))
-        best_similarity = float(np.max(similarities))
-        if support < LOCAL_MIN_CLASS_EXAMPLES or best_similarity < threshold:
-            continue
-        candidates.append((best_similarity, corrected_label, support))
-
-    if not candidates:
-        return CorrectionDecision(base_label, "base")
-    candidates.sort(reverse=True)
-    best_similarity, corrected_label, support = candidates[0]
-    if corrected_label != nearest_label:
-        return CorrectionDecision(base_label, "base")
-    if (
-        len(candidates) > 1
-        and best_similarity - candidates[1][0] < LOCAL_CONFLICT_MARGIN
-    ):
-        return CorrectionDecision(base_label, "base")
-    return CorrectionDecision(
-        corrected_label,
-        "adapter",
-        similarity=best_similarity,
-        agreement=1.0,
-        support=support,
-    )
-
-
 def resolve_correction(
     base_label: str,
     feature,
@@ -196,32 +128,33 @@ def resolve_correction(
     if suppressed or index is None or index.threshold is None:
         return CorrectionDecision(base_label, "base")
 
-    def local_fallback():
-        if index.validation_coverage <= 0:
-            return CorrectionDecision(base_label, "base")
-        return _resolve_local_cluster(base_label, feature, index)
-
     try:
         normalized = _normalize_feature(feature)
     except (TypeError, ValueError):
-        return local_fallback()
+        return CorrectionDecision(base_label, "base")
     if index.features.ndim != 2 or index.features.shape[1] != normalized.shape[0]:
-        return local_fallback()
+        return CorrectionDecision(base_label, "base")
 
     matching = np.flatnonzero(index.base_labels == base_label)
     if matching.size == 0:
-        return local_fallback()
-    similarities = index.features[matching] @ normalized
-    retained = similarities >= index.threshold
-    matching = matching[retained]
-    similarities = similarities[retained]
-    if matching.size == 0:
-        return local_fallback()
+        return CorrectionDecision(base_label, "base")
 
-    order = np.lexsort((matching, -similarities))[:MAX_NEIGHBORS]
-    matching = matching[order]
+    correction_positions = matching[
+        index.corrected_labels[matching] != base_label
+    ]
+    if correction_positions.size == 0:
+        return CorrectionDecision(base_label, "base")
+    similarities = index.features[correction_positions] @ normalized
+    retained = similarities >= index.threshold
+    correction_positions = correction_positions[retained]
+    similarities = similarities[retained]
+    if correction_positions.size == 0:
+        return CorrectionDecision(base_label, "base")
+
+    order = np.lexsort((correction_positions, -similarities))[:MAX_NEIGHBORS]
+    correction_positions = correction_positions[order]
     similarities = similarities[order]
-    labels = index.corrected_labels[matching]
+    labels = index.corrected_labels[correction_positions]
     weights = np.maximum(similarities, 0.0)
 
     vote_weights = {
@@ -235,11 +168,34 @@ def resolve_correction(
     total_weight = float(weights.sum())
     agreement = vote_weights[winner] / total_weight if total_weight > 0.0 else 0.0
     if support < MIN_SUPPORT or agreement < MIN_AGREEMENT:
-        return local_fallback()
+        return CorrectionDecision(base_label, "base")
+
+    winner_best = float(np.max(similarities[labels == winner]))
+    competing_best = [
+        float(np.max(similarities[labels == label]))
+        for label in CLASS_NAMES
+        if label not in (base_label, winner) and np.any(labels == label)
+    ]
+    if (
+        competing_best
+        and winner_best - max(competing_best) < CORRECTION_CONFLICT_MARGIN
+    ):
+        return CorrectionDecision(base_label, "base")
+
+    unchanged_positions = matching[
+        index.corrected_labels[matching] == base_label
+    ]
+    if unchanged_positions.size:
+        unchanged_best = float(
+            np.max(index.features[unchanged_positions] @ normalized)
+        )
+        if winner_best < unchanged_best + NEGATIVE_SIMILARITY_MARGIN:
+            return CorrectionDecision(base_label, "base")
+
     return CorrectionDecision(
         winner,
         "adapter",
-        similarity=float(similarities[0]),
+        similarity=winner_best,
         agreement=agreement,
         support=support,
     )
@@ -249,38 +205,74 @@ def _sample_validation_rows(rows):
     rows = tuple(rows)
     if len(rows) <= MAX_VALIDATION_ROWS:
         return rows
-    positions = np.linspace(
-        0, len(rows) - 1, num=MAX_VALIDATION_ROWS, dtype=np.int64
+    changed = [
+        row for row in rows if row.base_label != row.corrected_label
+    ]
+    unchanged = [
+        row for row in rows if row.base_label == row.corrected_label
+    ]
+
+    def sample(values, count):
+        if len(values) <= count:
+            return list(values)
+        positions = np.linspace(
+            0, len(values) - 1, num=count, dtype=np.int64
+        )
+        return [values[int(position)] for position in positions]
+
+    changed_count = min(len(changed), MAX_VALIDATION_ROWS // 2)
+    unchanged_count = min(
+        len(unchanged), MAX_VALIDATION_ROWS - changed_count
     )
-    return tuple(rows[int(position)] for position in positions)
+    changed_count += min(
+        len(changed) - changed_count,
+        MAX_VALIDATION_ROWS - changed_count - unchanged_count,
+    )
+    return tuple(
+        sample(changed, changed_count)
+        + sample(unchanged, unchanged_count)
+    )
 
 
-def _large_dataset_threshold(index: CorrectionIndex) -> float:
-    """Estimate a conservative threshold without exhaustive threshold search."""
-    nearest_consistent = []
-    pairs = sorted(set(zip(
-        index.base_labels.tolist(), index.corrected_labels.tolist()
-    )))
+def _candidate_thresholds(index: CorrectionIndex) -> tuple[float, ...]:
+    similarities = []
+    pairs = sorted(
+        set(zip(index.base_labels.tolist(), index.corrected_labels.tolist()))
+    )
     for base_label, corrected_label in pairs:
+        if base_label == corrected_label:
+            continue
         positions = np.flatnonzero(
             (index.base_labels == base_label)
             & (index.corrected_labels == corrected_label)
         )
-        if len(positions) < LOCAL_MIN_CLASS_EXAMPLES:
+        if len(positions) < MIN_SUPPORT:
             continue
-        features = index.features[positions]
-        pairwise = features @ features.T
-        np.fill_diagonal(pairwise, -np.inf)
-        nearest_consistent.extend(np.max(pairwise, axis=1).tolist())
+        pairwise = index.features[positions] @ index.features[positions].T
+        values = pairwise[np.triu_indices(len(positions), k=1)]
+        similarities.extend(
+            values[np.isfinite(values) & (values >= MIN_CHANGE_SIMILARITY)].tolist()
+        )
 
-    if not nearest_consistent:
-        return LOCAL_MIN_SIMILARITY
-    representative_similarity = float(np.percentile(nearest_consistent, 5))
-    return float(np.clip(
-        representative_similarity - LOCAL_RADIUS_MARGIN,
-        LOCAL_MIN_SIMILARITY,
-        1.0,
-    ))
+    fixed = np.asarray(
+        [0.90, 0.94, 0.96, 0.98, 0.985, 0.99, 0.992, 0.995, 0.997, 0.999],
+        dtype=np.float64,
+    )
+    if similarities:
+        learned = np.quantile(
+            np.asarray(similarities, dtype=np.float64),
+            [0.10, 0.25, 0.50, 0.75, 0.90],
+        )
+        fixed = np.concatenate((fixed, learned))
+    return tuple(
+        sorted(
+            {
+                float(np.clip(value, MIN_CHANGE_SIMILARITY, 1.0))
+                for value in fixed
+            },
+            reverse=True,
+        )
+    )
 
 
 def build_candidate(rows, base_model_hash: str, generation: int) -> CorrectionIndex:
@@ -291,8 +283,9 @@ def build_candidate(rows, base_model_hash: str, generation: int) -> CorrectionIn
     if len(rows) < 2:
         return base_index
 
-    if len(rows) > MAX_EXHAUSTIVE_TRAINING_ROWS:
-        threshold = _large_dataset_threshold(base_index)
+    validation_rows = _sample_validation_rows(rows)
+    best = None
+    for threshold in _candidate_thresholds(base_index):
         trial = CorrectionIndex.from_rows(
             rows,
             base_model_hash,
@@ -300,62 +293,17 @@ def build_candidate(rows, base_model_hash: str, generation: int) -> CorrectionIn
             threshold=threshold,
             validation_coverage=1,
         )
-        validation_rows = _sample_validation_rows(rows)
         correct, incorrect = _evaluate_leave_one_out(trial, validation_rows)
         coverage = correct + incorrect
         precision = correct / coverage if coverage else 0.0
-        if coverage == 0 or precision < MIN_VALIDATION_PRECISION:
-            return base_index
-        return CorrectionIndex.from_rows(
-            rows,
-            base_model_hash,
-            generation,
-            threshold=threshold,
-            validation_precision=precision,
-            validation_coverage=coverage,
-        )
-
-    pairwise = base_index.features @ base_index.features.T
-    candidates = pairwise[np.triu_indices(len(rows), k=1)]
-    candidates = np.unique(np.clip(candidates[np.isfinite(candidates)], 0.0, 1.0))
-
-    best = None
-    for threshold in candidates[::-1]:
-        trial = CorrectionIndex.from_rows(
-            rows, base_model_hash, generation, threshold=float(threshold)
-        )
-        correct, incorrect = _evaluate_leave_one_out(trial, rows)
-        coverage = correct + incorrect
-        if coverage == 0:
+        if not coverage or precision < MIN_VALIDATION_PRECISION:
             continue
-        precision = correct / coverage
-        if precision < MIN_VALIDATION_PRECISION:
-            continue
-        rank = (coverage, precision, float(threshold))
+        rank = (correct, -incorrect, precision, float(threshold))
         if best is None or rank > best[0]:
             best = (rank, float(threshold), precision, coverage)
 
     if best is None:
-        local_trial = CorrectionIndex.from_rows(
-            rows,
-            base_model_hash,
-            generation,
-            threshold=LOCAL_MIN_SIMILARITY,
-            validation_coverage=1,
-        )
-        correct, incorrect = _evaluate_leave_one_out(local_trial, rows)
-        coverage = correct + incorrect
-        precision = correct / coverage if coverage else 0.0
-        if coverage == 0 or precision < MIN_VALIDATION_PRECISION:
-            return base_index
-        return CorrectionIndex.from_rows(
-            rows,
-            base_model_hash,
-            generation,
-            threshold=LOCAL_MIN_SIMILARITY,
-            validation_precision=precision,
-            validation_coverage=coverage,
-        )
+        return base_index
     _, threshold, precision, coverage = best
     return CorrectionIndex.from_rows(
         rows,
@@ -572,6 +520,7 @@ def save_generation(root, index: CorrectionIndex) -> Path:
             os.fsync(stream.fileno())
         metadata = {
             "schema": ARTIFACT_SCHEMA,
+            "algorithm_version": CORRECTION_ALGORITHM_VERSION,
             "base_model_hash": index.base_model_hash,
             "generation": index.generation,
             "threshold": index.threshold,
@@ -600,6 +549,8 @@ def _load_generation(generation_dir: Path) -> CorrectionIndex:
     metadata = json.loads(metadata_path.read_text("utf-8"))
     if metadata.get("schema") != ARTIFACT_SCHEMA:
         raise ValueError("unsupported correction artifact schema")
+    if metadata.get("algorithm_version") != CORRECTION_ALGORITHM_VERSION:
+        raise ValueError("unsupported correction algorithm version")
     if metadata.get("adapter_sha256") != _sha256_file(adapter_path):
         raise ValueError("correction adapter checksum mismatch")
 

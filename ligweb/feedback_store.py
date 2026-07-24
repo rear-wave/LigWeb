@@ -14,7 +14,7 @@ import numpy as np
 
 
 CLASS_NAMES = ("IC", "NCG", "NNBE", "PCG", "PNBE")
-CORRECTION_TRAINING_REVISION = "large-dataset-v3"
+CORRECTION_TRAINING_REVISION = "similarity-change-v4"
 
 
 @dataclass(frozen=True)

@@ -120,4 +120,4 @@ def test_mark_clean_records_generation(tmp_path):
     store.mark_clean(4)
     assert store.is_dirty() is False
     assert store.get_state("active_generation") == "4"
-    assert store.get_state("training_revision") == "large-dataset-v3"
+    assert store.get_state("training_revision") == "similarity-change-v4"
