@@ -1,0 +1,14 @@
+{
+  "class_names": [
+    "IC",
+    "NCG",
+    "NNBE",
+    "PCG",
+    "PNBE"
+  ],
+  "feature_dim": 128,
+  "onnx_sha256": "f0e80bc05439bfefda473196b8e0562a31b4e441430f8314b3c3730891224de1",
+  "preprocess_schema": "legacy_minmax_8000_v1",
+  "schema": "ligedit_base_model_v1",
+  "source_checkpoint_sha256": "f3d74de7f1e1ad5b7f3a796f3a145c58e6f9fc86730c45a84f74a634a2cf82ea"
+}

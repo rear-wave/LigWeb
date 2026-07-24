@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LigWeb</title>
+  <link rel="stylesheet" href="/styles.css?v=20260724-01">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">ϟ</span>
+      <div><strong>LigWeb</strong><small>雷电波形工作台</small></div>
+    </div>
+    <div class="top-actions">
+      <span id="serverStatus" class="status-pill">连接中</span>
+      <span id="icSyncStatus" class="status-pill muted">IC 同步：等待状态</span>
+      <span id="mainTrainingStatus" class="status-pill muted">主模型：等待状态</span>
+      <span id="trainingStatus" class="status-pill muted">纠错模型：等待状态</span>
+    </div>
+  </header>
+
+  <main id="workspace" class="workspace">
+    <aside class="panel files-panel">
+      <div class="panel-title files-title">
+        <span class="files-title-copy">数据文件 <small id="fileCount">0</small></span>
+        <button id="collapseFilesButton" class="collapse-button" title="收起数据文件栏" aria-label="收起数据文件栏">‹</button>
+      </div>
+      <div id="datasetTabs" class="tabs"></div>
+      <label class="search-box">
+        <span>⌕</span><input id="fileSearch" placeholder="搜索文件名或类别目录">
+      </label>
+      <div id="fileList" class="file-list empty-state">正在读取…</div>
+      <button id="loadMoreButton" class="button ghost full hidden">加载更多</button>
+    </aside>
+
+    <section class="panel pieces-panel">
+      <div class="panel-title">
+        <span id="currentFileTitle">波形片段</span>
+        <div class="panel-actions">
+          <button id="saveLigButton" class="button save-file-button" disabled>保存 LIG</button>
+          <button id="closeLigButton" class="button close-file-button" disabled>关闭 LIG</button>
+          <span id="pieceCount" class="count-badge">0</span>
+        </div>
+      </div>
+      <div class="piece-tools">
+        <input id="pieceSearch" placeholder="筛选时间、昼夜或类别">
+        <button id="selectAllButton" class="button ghost">全选</button>
+        <button id="clearSelectionButton" class="button ghost">清除</button>
+      </div>
+      <div class="import-tools">
+        <input id="uploadInput" type="file" accept=".lig" multiple hidden>
+        <button id="importFileButton" class="button ghost">上传待处理 LIG</button>
+        <button id="importCorrectedButton" class="button secondary">检查完成，加入纠错集</button>
+      </div>
+      <div id="pieceDropZone" class="piece-drop-zone">
+        <div id="pieceList" class="piece-list empty-state">请选择一个 .lig 文件</div>
+        <div id="dropOverlay" class="drop-overlay hidden">释放到待处理区，不会直接加入纠错集</div>
+      </div>
+      <div class="operation-row">
+        <div class="action-dropdown">
+          <button id="exportMenuButton" class="button secondary operation-button" aria-expanded="false">导出 <span>⌃</span></button>
+          <div id="exportMenu" class="action-menu hidden" role="menu">
+            <button id="exportCheckedAction" role="menuitem"><span>导出勾选片段</span><kbd>Ctrl+E</kbd></button>
+            <button id="exportRemainingAction" role="menuitem"><span>导出未删除片段</span></button>
+            <hr>
+            <button id="exportDaynightAction" role="menuitem"><span>按昼夜分类导出</span></button>
+            <button id="exportTimestampsAction" role="menuitem"><span>导出时间戳列表</span></button>
+            <button id="exportCheckedTimestampsAction" role="menuitem"><span>导出勾选时间戳</span></button>
+          </div>
+        </div>
+        <div class="action-dropdown">
+          <button id="deleteMenuButton" class="button danger operation-button" aria-expanded="false">删除 <span id="deletedCount" class="operation-count">0</span><span>⌃</span></button>
+          <div id="deleteMenu" class="action-menu hidden" role="menu">
+            <button id="deleteCurrentAction" role="menuitem"><span>删除当前片段</span><kbd>Delete</kbd></button>
+            <button id="deleteCheckedAction" role="menuitem"><span>删除全部勾选</span></button>
+            <hr>
+            <button id="undoCurrentDeleteAction" role="menuitem"><span>撤销当前片段删除</span><kbd>Ctrl+Z</kbd></button>
+            <button id="undoAllDeleteAction" role="menuitem"><span>全部撤销删除</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-column">
+      <article class="panel waveform-card">
+        <div class="waveform-heading">
+          <div>
+            <h1 id="pieceTitle">请选择波形</h1>
+            <p id="pieceSubtitle">从左侧选择服务器上的数据文件</p>
+          </div>
+          <div class="legend"><span class="raw-line"></span>原始 <span class="filtered-line"></span>滤波</div>
+        </div>
+        <div id="canvasWrap" class="canvas-wrap">
+          <canvas id="waveformCanvas"></canvas>
+          <div id="plotEmpty" class="plot-empty">波形将在这里显示</div>
+        </div>
+        <div class="plot-help">滚轮缩放幅值 · 双击恢复</div>
+      </article>
+
+      <div class="detail-grid">
+        <article class="panel classification-card">
+          <div class="panel-title"><span>分类结果</span><span id="sourceBadge" class="source-badge">—</span></div>
+          <div class="model-results">
+            <div class="model-result main-result">
+              <span>主模型结果</span>
+              <strong id="mainModelLabel">—</strong>
+              <small id="mainModelMeta">尚未运行</small>
+            </div>
+            <div class="model-arrow">→</div>
+            <div class="model-result correction-result">
+              <span>纠错模型结果</span>
+              <strong id="correctionModelLabel">—</strong>
+              <small id="correctionModelMeta">尚未运行</small>
+            </div>
+          </div>
+          <div class="probability-title">主模型类别概率</div>
+          <div id="probabilityBars" class="probability-bars"></div>
+          <div class="correction-actions">
+            <span>人工纠正为</span>
+            <div id="labelButtons" class="label-buttons"></div>
+            <button id="cancelCorrectionButton" class="button danger ghost hidden">取消本条纠错</button>
+          </div>
+        </article>
+
+        <article class="panel metadata-card">
+          <div class="panel-title"><span>片段信息</span></div>
+          <dl id="metadataList"><dt>状态</dt><dd>等待选择</dd></dl>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <div id="closeSaveDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="closeSaveTitle">
+    <div class="save-dialog">
+      <div class="dialog-icon">!</div>
+      <h2 id="closeSaveTitle">保存对 LIG 的修改？</h2>
+      <p id="closeSaveMessage">当前文件存在尚未保存的删除标记。</p>
+      <small>保存会直接从原文件中移除标记片段，此操作不会生成 .lig.bak 备份。</small>
+      <div class="dialog-actions">
+        <button id="cancelCloseButton" class="button ghost">取消</button>
+        <button id="discardAndCloseButton" class="button danger">不保存</button>
+        <button id="saveAndCloseButton" class="button primary">保存并关闭</button>
+      </div>
+    </div>
+  </div>
+  <div id="contextMenu" class="context-menu hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js?v=20260724-01" defer></script>
+</body>
+</html>

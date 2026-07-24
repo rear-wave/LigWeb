@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+
+# Build outputs
+dist/
+build/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.venv/
+venv/
+webapp-data/
+.pytest_cache/
+.coverage
+
+# Windows
+*.exe
+*.dll
+*.pdb
+*.manifest
+
+# Logs
+*.log
+.workbuddy/
+.worktrees/

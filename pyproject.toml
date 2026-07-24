@@ -1,0 +1,9 @@
+[project]
+name = "ligweb"
+version = "1.0.0"
+description = "LAN waveform review, correction, and training service for LIG files"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
