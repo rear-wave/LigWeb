@@ -502,7 +502,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--required-training-env", default="ligclassify")
     parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--samples-per-epoch", type=int, default=120000)
     parser.add_argument("--keep-runs", type=int, default=3)
